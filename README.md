@@ -1,62 +1,82 @@
 ## AI Interview Assistant
 
-Full-stack app for technical interviews: resume parsing, AI-generated questions, timed recordings, batch transcription + scoring, and an interviewer dashboard.
+AI-first interview simulator that preloads questions from a resume, speaks them aloud, records answers, batch-transcribes and scores them, then surfaces a dashboard for reviewers.
 
-## Stack
-- Frontend: React + Vite, Redux Toolkit, Ant Design, Tailwind
-- Backend: Node.js, Express, Gemini (Google Generative AI), AssemblyAI (STT)
-- Storage: Redux Persist (localStorage)
+### Highlights
+- Guided interview flow with TTS, pre-speak countdown, timers per difficulty, waveform viz, and auto-advance on timeout.
+- Batch upload of all responses: uploads once, sends to AssemblyAI for STT, then scores with Gemini and returns feedback.
+- Interviewer dashboard with search, sort, filters, modal details, scores, and per-question feedback.
+- Resume parsing (PDF/DOCX) with fallback to manual info capture when fields are missing.
+- State persisted locally via Redux Persist so refreshes do not drop progress.
 
-## Environment
+### Tech Stack
+- Frontend: React + Vite, Ant Design, Tailwind (v4), Redux Toolkit, Redux Persist, axios, lucide icons.
+- Backend: Node.js (Express), AssemblyAI (STT), Google Gemini (Generative + scoring), multer for uploads, pdf-parse/mammoth for resume text.
 
-Backend (.env):
+### Project Layout
+- [backend/server.js](backend/server.js) — Express app + route mounting.
+- [backend/controllers/interviewController.js](backend/controllers/interviewController.js) — resume extract, question gen, summary gen, batch evaluation.
+- [backend/controllers/transcriptionController.js](backend/controllers/transcriptionController.js) — single-file transcription endpoint.
+- [backend/routes/interview.js](backend/routes/interview.js) and [backend/routes/transcribe.js](backend/routes/transcribe.js) — route wiring.
+- [backend/services/ai.js](backend/services/ai.js) — Gemini model factory.
+- [backend/services/resume.js](backend/services/resume.js) — PDF/DOCX text extraction.
+- [backend/utils/aiJson.js](backend/utils/aiJson.js) — safe JSON parsing from LLM responses.
+- [frontend/src/App.jsx](frontend/src/App.jsx) — tabbed layout for interviewee and dashboard.
+- [frontend/src/components/IntervieweeTab.jsx](frontend/src/components/IntervieweeTab.jsx) — resume upload, info capture, question preload, interview start.
+- [frontend/src/components/ChatInterface.jsx](frontend/src/components/ChatInterface.jsx) — TTS + countdown + recording + batch submission flow.
+- [frontend/src/components/InterviewerTab.jsx](frontend/src/components/InterviewerTab.jsx) — candidate list, filters, detail modal with feedback.
+- [frontend/src/services/api.js](frontend/src/services/api.js) — client API wrapper.
+
+### Environment
+Create two `.env` files at the project root folders.
+
+Backend `.env`
 - PORT=5000
-- GEMINI_API_KEY=...
-- GEMINI_MODEL=gemini-2.5-flash (As per choice)
-- ASSEMBLYAI_API_KEY=...
+- GEMINI_API_KEY=your_key
+- GEMINI_MODEL=gemini-2.5-flash
+- ASSEMBLYAI_API_KEY=your_key
 
-Frontend (.env):
+Frontend `.env`
 - VITE_API_BASE_URL=http://localhost:5000/api
 
-## Development
-
-Backend
+### Quick Start
+1) Backend
 - cd backend
 - npm install
 - npm start
 
-Frontend
+2) Frontend (new terminal)
 - cd frontend
 - npm install
 - npm run dev
 
-## Features
-- Resume upload (PDF/DOCX) and text extraction
-- 6 AI-generated questions (2 Easy, 2 Medium, 2 Hard) preloaded before start
-- 3s “get ready” + TTS of question + 5s pre-record countdown
-- Record each answer; after the last, batch upload → transcribe (AssemblyAI) → score (Gemini)
-- Final summary with average score; empty answers score 0
-- Interviewer dashboard with sorting and details
- 
-Notes:
-- Audio recordings are kept in-memory on the client and uploaded only at the end.
-- We can use cloud for temporary storage, and allow resuming from any audio.
-- If we use cloud storage, we can evaluate in backend, even if tab is closed.
+Open the Vite URL (default http://localhost:5173). The frontend expects the backend on http://localhost:5000.
 
-## Project Structure
+### API Surface (backend)
+- POST /api/extract-resume — multipart `resume` (pdf/docx); returns parsed fields + raw text.
+- POST /api/generate-questions — body `{ candidateInfo }`; returns 6 questions (2 Easy, 2 Medium, 2 Hard).
+- POST /api/generate-summary — body `{ candidateInfo, questions, answers, scores }`; returns short summary + average.
+- POST /api/batch-evaluate — multipart `payload` JSON + `audios[]` (webm). Transcribes via AssemblyAI, scores via Gemini, returns transcripts + evaluations.
+- POST /api/transcribe-audio — multipart `audio`; single-file AssemblyAI transcription.
 
-backend/
-- server.js
-- routes/interview.js, routes/transcribe.js
-- controllers/interviewController.js, controllers/transcriptionController.js
-- middleware/upload.js
-- services/ai.js, services/resume.js
-- utils/aiJson.js
-- constants/difficulty.js
+### Frontend Flow (interviewee)
+- Upload resume → auto parse; missing fields fall back to a quick form.
+- Request mic access, preload 6 questions, then start.
+- For each question: 3s pre-speak countdown → TTS playback → 5s pre-record countdown → recording starts with live waveform and per-difficulty timer (20/60/120s).
+- After Q6, all blobs upload once, transcribe, score, and summarize; state is persisted locally.
 
-frontend/
-- src/components (ChatInterface, IntervieweeTab, InterviewerTab)
-- src/services (api.js)
-- src/store (Redux slices)
-- vite.config.js
- - public/ (static assets served at root: placed favicon.ico, logo.svg/png)
+### Frontend Flow (interviewer)
+- Dashboard lists candidates with status, score, date; search by name/email; filter by status; sort by score/name/date.
+- Detail modal shows contact info, per-question scores, transcripts, and Gemini feedback.
+
+### Notes & Decisions
+- Audio is kept in-memory and uploaded only once to limit API calls and avoid partial failures.
+- Gemini prompts enforce JSON-only responses; [backend/utils/aiJson.js](backend/utils/aiJson.js) strips code fences before parsing.
+- Difficulty timers live in [backend/constants/difficulty.js](backend/constants/difficulty.js) and mirror the frontend timer setup for consistency.
+- Tailwind v4 is brought in via the CSS `@import 'tailwindcss';` approach.
+
+### Potential Next Steps
+- Add retries/backoff around LLM calls and AssemblyAI polling.
+- Persist recordings to object storage for audit/replay.
+- Add auth for interviewer dashboard.
+- Add CI lint/test, plus rate limits on generation endpoints.
